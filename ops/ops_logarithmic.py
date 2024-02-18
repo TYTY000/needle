@@ -5,25 +5,18 @@ from ..autograd import TensorTuple, TensorTupleOp
 
 from .ops_mathematic import *
 
-from ..backend_selection import array_api, BACKEND 
+import numpy as array_api
 
 class LogSoftmax(TensorOp):
     def compute(self, Z):
         ### BEGIN YOUR SOLUTION
         exp = array_api.exp(Z)
-        return array_api.log(array_api.sum(exp))
+        return array_api.log(array_api.sum(exp)) + array_api.max(Z, keepdims=False)
         ### END YOUR SOLUTION
 
     def gradient(self, out_grad, node):
         ### BEGIN YOUR SOLUTION
-        Z = node.inputs[0]
-        Z_log = log(Z)
-        # Compute the softmax of Z
-        Z_softmax = exp(Z_log)
-        # Compute the gradient of Z_log with respect to Z
-        Z_log_grad = out_grad - array_api.summation(out_grad) * Z_softmax
-        # Return the gradient of Z with respect to Z
-        return Z_log_grad
+        raise NotImplementedError()
         ### END YOUR SOLUTION
 
 
@@ -33,23 +26,19 @@ def logsoftmax(a):
 
 class LogSumExp(TensorOp):
     def __init__(self, axes: Optional[tuple] = None):
-        if isinstance(axes, int):
-            axes=(axes,)
-
         self.axes = axes
 
     def compute(self, Z):
         ### BEGIN YOUR SOLUTION
-        max_z = Z.max(axis = self.axes, keepdims=True)
-        exp = array_api.exp(Z - max_z.broadcast_to(Z.shape))
-        return array_api.log(array_api.sum(exp, axis=self.axes)) + Z.max(axis=self.axes,keepdims=False)
+        max_z = array_api.max(Z, axis = self.axes, keepdims=True)
+        exp = array_api.exp(Z - max_z)
+        return array_api.log(array_api.sum(exp, axis=self.axes)) + array_api.max(Z, axis=self.axes,keepdims=False)
         ### END YOUR SOLUTION
 
     def gradient(self, out_grad, node):
         ### BEGIN YOUR SOLUTION
         # i != k: gradient = exp(zi) / sum(exp(zk))
         # i == k: gradient = exp(zi) / sum(exp(zk))
-
         if self.axes:
             # get new shape
             j = 0
@@ -64,7 +53,7 @@ class LogSumExp(TensorOp):
             tmp_grad = out_grad
             tmp_node = node
         return tmp_grad * exp(node.inputs[0] - tmp_node)
-
+        ### END YOUR SOLUTION
 
 def logsumexp(a, axes=None):
     return LogSumExp(axes=axes)(a)

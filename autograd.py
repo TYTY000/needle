@@ -13,11 +13,10 @@ TENSOR_COUNTER = 0
 
 # NOTE: we will import numpy as the array_api
 # as the backend for our computations, this line will change in later homeworks
-
 import numpy as array_api
+
 NDArray = numpy.ndarray
 
-from .backend_selection import array_api, NDArray, default_device
 
 class Op:
     """Operator definition."""
@@ -188,7 +187,7 @@ class TensorTuple(Value):
 
     def detach(self):
         """Create a new tensor that shares the data but detaches from the graph."""
-        return TensorTuple.make_const(self.realize_cached_data())
+        return Tuple.make_const(self.realize_cached_data())
 
 
 class Tensor(Value):
@@ -216,7 +215,7 @@ class Tensor(Value):
                     array.numpy(), device=device, dtype=dtype
                 )
         else:
-            device = device if device else default_device()
+            device = device if device else cpu()
             cached_data = Tensor._array_from_numpy(array, device=device, dtype=dtype)
 
         self._init(
@@ -381,16 +380,15 @@ def compute_gradient_of_variables(output_tensor, out_grad):
     reverse_topo_order = list(reversed(find_topo_sort([output_tensor])))
 
     ### BEGIN YOUR SOLUTION
-    for i in reverse_topo_order:
-        grad = sum_node_list(node_to_output_grads_list[i])
-        i.grad = grad
-        if not i.is_leaf():
-            input_grads = i.op.gradient_as_tuple(grad, i) # compute
-            for j in range(len(i.inputs)):
-                k = i.inputs[j]
-                if k not in node_to_output_grads_list:
-                    node_to_output_grads_list[k] = []
-                node_to_output_grads_list[k].append(input_grads[j])
+    for node in reverse_topo_order:
+      node.grad = sum(node_to_output_grads_list[node])
+      if node.is_leaf():
+        continue
+      for i, grad in enumerate(node.op.gradient_as_tuple(node.grad, node)):
+          j =  node.inputs[i]
+          if j not in node_to_output_grads_list:
+              node_to_output_grads_list[j] = []
+          node_to_output_grads_list[j].append(grad)
     ### END YOUR SOLUTION
 
 
@@ -417,10 +415,9 @@ def topo_sort_dfs(node, visited, topo_order):
     ### BEGIN YOUR SOLUTION
     if node in visited:
         return
-    visited.add(node)
     for n in node.inputs:
-        if n not in visited:
-            topo_sort_dfs(n, visited, topo_order)
+        topo_sort_dfs(n, visited, topo_order)
+    visited.add(node)
     topo_order.append(node)
     ### END YOUR SOLUTION
 

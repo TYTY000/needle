@@ -220,15 +220,3 @@ class Residual(Module):
         ### BEGIN YOUR SOLUTION
         return x + self.fn(x)
         ### END YOUR SOLUTION
-
-
-class BatchNorm2d(BatchNorm1d):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-
-    def forward(self, x: Tensor):
-        # nchw -> nhcw -> nhwc
-        s = x.shape
-        _x = x.transpose((1, 2)).transpose((2, 3)).reshape((s[0] * s[2] * s[3], s[1]))
-        y = super().forward(_x).reshape((s[0], s[2], s[3], s[1]))
-        return y.transpose((2,3)).transpose((1,2))

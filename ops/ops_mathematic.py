@@ -11,8 +11,8 @@ import numpy
 # NOTE: we will import numpy as the array_api
 # as the backend for our computations, this line will change in later homeworks
 
-from ..backend_selection import array_api, BACKEND 
-from .ops_tuple import *
+import numpy as array_api
+
 
 class EWiseAdd(TensorOp):
     def compute(self, a: NDArray, b: NDArray):
@@ -69,6 +69,27 @@ def mul_scalar(a, scalar):
     return MulScalar(scalar)(a)
 
 
+class PowerScalar(TensorOp):
+    """Op raise a tensor to an (integer) power."""
+
+    def __init__(self, scalar: int):
+        self.scalar = scalar
+
+    def compute(self, a: NDArray) -> NDArray:
+        ### BEGIN YOUR SOLUTION
+        return array_api.power(a, self.scalar)
+        ### END YOUR SOLUTION
+
+    def gradient(self, out_grad, node):
+        ### BEGIN YOUR SOLUTION
+        return node.inputs[0] ** (self.scalar - 1) * self.scalar * out_grad
+        ### END YOUR SOLUTION
+
+
+def power_scalar(a, scalar):
+    return PowerScalar(scalar)(a)
+
+
 class EWisePow(TensorOp):
     """Op to element-wise raise a tensor to a power."""
 
@@ -83,32 +104,11 @@ class EWisePow(TensorOp):
 
         a, b = node.inputs[0], node.inputs[1]
         grad_a = out_grad * b * (a ** (b - 1))
-        grad_b = out_grad * (a**b) * log(a)
+        grad_b = out_grad * (a**b) * array_api.log(a.data)
         return grad_a, grad_b
 
 def power(a, b):
     return EWisePow()(a, b)
-
-
-class PowerScalar(TensorOp):
-    """Op raise a tensor to an (integer) power."""
-
-    def __init__(self, scalar: int):
-        self.scalar = scalar
-
-    def compute(self, a: NDArray) -> NDArray:
-        ### BEGIN YOUR SOLUTION
-        return a**self.scalar
-        ### END YOUR SOLUTION
-
-    def gradient(self, out_grad, node):
-        ### BEGIN YOUR SOLUTION
-        return node.inputs[0] ** (self.scalar - 1) * self.scalar * out_grad
-        ### END YOUR SOLUTION
-
-
-def power_scalar(a, scalar):
-    return PowerScalar(scalar)(a)
 
 
 class EWiseDiv(TensorOp):
@@ -116,7 +116,7 @@ class EWiseDiv(TensorOp):
 
     def compute(self, a, b):
         ### BEGIN YOUR SOLUTION
-        return a / b
+        return array_api.divide(a, b)
         ### END YOUR SOLUTION
 
     def gradient(self, out_grad, node):
@@ -136,7 +136,7 @@ class DivScalar(TensorOp):
 
     def compute(self, a):
         ### BEGIN YOUR SOLUTION
-        return a / self.scalar
+        return array_api.divide(a, self.scalar)
         ### END YOUR SOLUTION
 
     def gradient(self, out_grad, node):
@@ -156,12 +156,9 @@ class Transpose(TensorOp):
     def compute(self, a):
         ### BEGIN YOUR SOLUTION
         if self.axes:
-            axis0, axis1 = self.axes[0], self.axes[1]
+            return array_api.swapaxes(a, self.axes[0], self.axes[1])
         else:
-            axis0, axis1 = a.ndim - 2, a.ndim - 1
-        permutation = list(range(a.ndim))
-        permutation[axis0], permutation[axis1] = axis1, axis0
-        return a.permute(permutation)    
+            return array_api.swapaxes(a, a.ndim-1, a.ndim-2)
         ### END YOUR SOLUTION
 
     def gradient(self, out_grad, node):
@@ -199,7 +196,7 @@ class BroadcastTo(TensorOp):
 
     def compute(self, a):
         ### BEGIN YOUR SOLUTION
-        return array_api.broadcast_to(a, self.shape).compact()
+        return array_api.broadcast_to(a, self.shape)
         ### END YOUR SOLUTION
 
     def gradient(self, out_grad, node):
@@ -230,14 +227,10 @@ class Summation(TensorOp):
     def gradient(self, out_grad, node):
         ### BEGIN YOUR SOLUTION
         shape = list(node.inputs[0].shape)
-        if self.axes is None:
-            axis = range(len(shape))
-        elif isinstance(self.axes, tuple):
+        if self.axes:
             axis = self.axes
-        elif isinstance(self.axes, int):
-            axis = (self.axes,)
         else:
-            raise ValueError("unsupported axes type")
+            axis = range(len(shape))
         for a in axis:
             shape[a] = 1
         return out_grad.reshape(shape).broadcast_to(node.inputs[0].shape)
@@ -251,7 +244,7 @@ def summation(a, axes=None):
 class MatMul(TensorOp):
     def compute(self, a, b):
         ### BEGIN YOUR SOLUTION
-        return a @ b
+        return array_api.matmul(a,b)
         ### END YOUR SOLUTION
 
     # Y = X @ W, yij = sum(xi. *w.j ) 
@@ -277,7 +270,7 @@ def matmul(a, b):
 class Negate(TensorOp):
     def compute(self, a):
         ### BEGIN YOUR SOLUTION
-        return - a
+        return array_api.negative(a)
         ### END YOUR SOLUTION
 
     def gradient(self, out_grad, node):
@@ -325,163 +318,17 @@ def exp(a):
 class ReLU(TensorOp):
     def compute(self, a):
         ### BEGIN YOUR SOLUTION
-        return array_api.maximum(a, 0)
+        return array_api.maximum(0, a)
         ### END YOUR SOLUTION
 
     def gradient(self, out_grad, node):
         ### BEGIN YOUR SOLUTION
-        ans = node.realize_cached_data()
-        return out_grad * Tensor(ans > 0, device=out_grad.device)
+        ans = node.inputs[0].realize_cached_data()
+        ans[ans > 0] = 1
+        ans[ans <= 0] = 0
+        return out_grad * Tensor(ans)
         ### END YOUR SOLUTION
 
 
 def relu(a):
     return ReLU()(a)
-
-class Tanh(TensorOp):
-    def compute(self, a):
-        ### BEGIN YOUR SOLUTION
-        return array_api.tanh(a)
-        ### END YOUR SOLUTION
-
-    def gradient(self, out_grad, node):
-        ### BEGIN YOUR SOLUTION
-        x = node.inputs[0]
-        y = exp(-x) + exp(x)
-        z = mul_scalar(power_scalar(y, -2), 4)
-        return out_grad * z
-        ### END YOUR SOLUTION
-
-
-def tanh(a):
-    return Tanh()(a)
-
-
-class Stack(TensorOp):
-    def __init__(self, axis: int):
-        """
-        Concatenates a sequence of arrays along a new dimension.
-        Parameters:
-        axis - dimension to concatenate along
-        All arrays need to be of the same size.
-        """
-        self.axis = axis
-
-    def compute(self, args: TensorTuple) -> Tensor:
-        ### BEGIN YOUR SOLUTION
-        return array_api.stack(args, self.axis)
-        ### END YOUR SOLUTION
-
-
-    def gradient(self, out_grad, node):
-        ### BEGIN YOUR SOLUTION
-        return Split(self.axis)(out_grad)
-        ### END YOUR SOLUTION
-
-
-def stack(args, axis):
-    return Stack(axis)(make_tuple(*args))
-
-
-class Split(TensorTupleOp):
-    def __init__(self, axis: int):
-        """
-        Splits a tensor along an axis into a tuple of tensors.
-        (The "inverse" of Stack)
-        Parameters:
-        axis - dimension to split
-        """
-        self.axis = axis
-
-    def compute(self, A):
-        ### BEGIN YOUR SOLUTION
-        return array_api.split(A, self.axis)
-        ### END YOUR SOLUTION
-
-    def gradient(self, out_grad, node):
-        ### BEGIN YOUR SOLUTION
-        return Stack(self.axis)(out_grad)
-        ### END YOUR SOLUTION
-
-
-def split(a, axis):
-    return Split(axis)(a)
-
-
-class Flip(TensorOp):
-    def __init__(self, axes: Optional[tuple] = None):
-        self.axes = axes
-
-    def compute(self, a):
-        ### BEGIN YOUR SOLUTION
-        return array_api.flip(a, self.axes)
-        ### END YOUR SOLUTION
-
-    def gradient(self, out_grad, node):
-        ### BEGIN YOUR SOLUTION
-        return flip(out_grad, self.axes)
-        ### END YOUR SOLUTION
-
-
-def flip(a, axes):
-    return Flip(axes)(a)
-
-
-class Dilate(TensorOp):
-    def __init__(self, axes: tuple, dilation: int):
-        self.axes = axes
-        self.dilation = dilation
-
-    def compute(self, a):
-        ### BEGIN YOUR SOLUTION
-        raise NotImplementedError()
-        ### END YOUR SOLUTION
-
-    def gradient(self, out_grad, node):
-        ### BEGIN YOUR SOLUTION
-        raise NotImplementedError()
-        ### END YOUR SOLUTION
-
-
-def dilate(a, axes, dilation):
-    return Dilate(axes, dilation)(a)
-
-
-class UnDilate(TensorOp):
-    def __init__(self, axes: tuple, dilation: int):
-        self.axes = axes
-        self.dilation = dilation
-
-    def compute(self, a):
-        ### BEGIN YOUR SOLUTION
-        raise NotImplementedError()
-        ### END YOUR SOLUTION
-
-    def gradient(self, out_grad, node):
-        ### BEGIN YOUR SOLUTION
-        raise NotImplementedError()
-        ### END YOUR SOLUTION
-
-
-def undilate(a, axes, dilation):
-    return UnDilate(axes, dilation)(a)
-
-
-class Conv(TensorOp):
-    def __init__(self, stride: Optional[int] = 1, padding: Optional[int] = 0):
-        self.stride = stride
-        self.padding = padding
-
-    def compute(self, A, B):
-        ### BEGIN YOUR SOLUTION
-        raise NotImplementedError()
-        ### END YOUR SOLUTION
-
-    def gradient(self, out_grad, node):
-        ### BEGIN YOUR SOLUTION
-        raise NotImplementedError()
-        ### END YOUR SOLUTION
-
-
-def conv(a, b, stride=1, padding=1):
-    return Conv(stride, padding)(a, b)
